@@ -1,0 +1,221 @@
+# include <iostream>
+# include <bits/stdc++.h>
+using namespace std;
+
+// ---------- CODE FAST ----------------------
+// Var names in main() == vars name in class == Vars name in constr args ( Easy copy, no confusion) 
+// Copy duplicate code as much as u can 
+// Avoid Getter, setter, make everything public
+
+// ----------- STRUCTURE ----------------------
+// Put class above which are less depenedent
+// Even if we pass pointer(*ptr), its a copy. So u will be assigning ptr = new obj() [assigned to copy ptr]. If want to assign to main ptr, pass by ref (*& ptr ), ptr = new obj(); 
+// Always create default constructor, u can intit the value and nullptr in  declaration, defautl constructor
+// Want to call Parent method, just use its name he will listen :) PaymentHandler::handlePayment(2000);
+// IMP : If u dont create any constructor then ONLY a default constructor is created, but if you alreay created one constructor where u pass value, then u also have to create default constructor
+// So, at core alwways create 2 construtor
+
+// ----------- CIRCULAR DEPENDENCY ------------- 
+// forward declare class or u can remove the function which are cicular and define them later.  in Class {void exitATM (ATMState*& atmState) override; // same signature w/o body}
+// ... void HasCardState::exitATM(ATMState*& atmState) { atmState = new IdleState();}       [no override since u used above]
+
+
+//-------------------------------- Payment Handle (Base Class)
+class PaymentHandler{
+    public : 
+        PaymentHandler * next = nullptr;
+        virtual bool handlePayment(int amount){
+            return next ? next->handlePayment(amount) : false;
+        }
+};
+
+class TwokPaymentHandler : public PaymentHandler{
+        bool handlePayment(int amount)override{
+            if(amount % 2000 == 0){         // if can process [HardCoded]
+                cout<< "processed amount in 2000 Handler, amount :"<< amount <<endl;
+                return true;
+            }
+            else {                        
+                cout<<"amount not a multiple of 2000, forwarding request to 500 Handler for amount "<< amount - 2000 <<endl;
+                return PaymentHandler::handlePayment(amount - 2000); // [Hardcoded for 1 note] // [Std] calling parent class function
+            }
+            return false;
+        }
+};
+
+class FiveHundredPaymentHandler : public PaymentHandler{
+    public : 
+
+        bool handlePayment(int amount) override{
+            if(amount % 500 == 0){                                  // [HardCoded]
+                cout<< "processed amount in 500 Handler, amount :"<< amount <<endl;
+                return true;
+            }
+            else {
+                cout<<"amount not a multiple of 500, forwarding request to null Handler for amount "<< amount - 500 <<endl;
+                return PaymentHandler::handlePayment(amount - 500); // [Hardcoded for 1 note]
+            }
+            return false;
+        }
+};
+
+// ------------------------------- Account
+class Account{
+  public:
+    int accNum;
+    int totalMoney;
+    Account(): accNum(0), totalMoney(0){};
+    Account(int accNum, int totalMoney): accNum(accNum), totalMoney(totalMoney){};
+};
+
+// ------------------------------- Card
+class Card{
+  public:
+    int cardNum;
+    int pin;
+    Account account;
+    Card():cardNum(0), pin(9999), account(){};                          
+    Card(int cardNum, int pin, Account account):cardNum(cardNum), pin (pin), account(account){};
+};
+
+// ------------------------------- User
+class User{
+  public:
+    string name;
+    Account account;
+    User():name("dummy"), account(){};                                                          // for account automatically calls default constr
+    User(string name, Account account):name(name), account(account){};
+};    
+
+// Forward declaration (very imp, even this dont work, so move least dependent class first then more depenedent last. if X depnd on Y, keep Y at top on X )
+class ATM;                  
+
+// ------------------------------- ATMState (Its Interface == all abstract functions) || ensure that in state pattern u r passing ref to state pointer 
+class ATMState{
+  public:
+    virtual void insertCard(ATMState*& atmState) = 0;
+    virtual void enterPin(int pin, ATMState*& atmState) = 0;
+    virtual void selectOptions(string options, ATMState*& atmState) = 0;
+    virtual void cashWithdrawl(int amount, ATMState*& atmState, ATM & atm) = 0;
+    virtual void exitATM(ATMState*& atmState) = 0;
+};
+
+// ------------------------------- ATM
+class ATM{
+  public:
+    int id;
+    ATMState* atmState;                                         // this state will change, so use pointers to init
+    int totalMoney;
+    int total2000Notes;
+    int total500Notes;
+    int total100Notes;
+
+    ATM(): id(0), atmState(nullptr), totalMoney(4000), total2000Notes(1), total500Notes(2),total100Notes(10){};
+    ATM(int id, ATMState * atmState, int totalMoney, int total2000Notes, int total500Notes,int total100Notes): id(id), atmState(atmState), 
+    totalMoney(totalMoney), total2000Notes(total2000Notes), total500Notes(total500Notes),total100Notes(total100Notes){};
+};
+
+class CashWithDrawlState : public ATMState {
+    
+    public:
+    PaymentHandler * paymentHandler = nullptr;
+    
+    void insertCard (ATMState*& atmState) override {}
+    void enterPin (int pin, ATMState*& atmState) override { }
+    void selectOptions (string options, ATMState*& atmState) override {}
+    void cashWithdrawl (int amount, ATMState*& atmState, ATM & atm) override {
+        if(amount > atm.totalMoney){
+            cout<< "Atm doesnot have enough money you rich brat "<<endl;
+        } else {
+            
+            cout<< "Using Cash Handler to process money"<<endl;
+            
+            paymentHandler = new TwokPaymentHandler();
+            paymentHandler->next = new FiveHundredPaymentHandler();
+            paymentHandler->next->next = nullptr;
+            
+            if(paymentHandler->handlePayment(amount)){
+                cout<< "Amount succesfully deducted via processors"<<endl;
+                atm.totalMoney = atm.totalMoney - amount;
+            } else {
+                cout<< "Cash not available via processors"<<endl;
+            }
+        }
+        exitATM(atmState);
+    }
+    void exitATM (ATMState*& atmState) override;                            // circular dependency with Idle state, so even u can detach function and define at end.<< VIMP, NEW SYNTAX >> 
+};
+
+class SelectOptionsState : public ATMState {
+    void insertCard (ATMState*& atmState) override {}
+    void enterPin (int pin, ATMState*& atmState) override {}
+    void selectOptions (string options, ATMState*& atmState) override {
+        if(options == "cashWithdrwal"){
+          atmState = new CashWithDrawlState();  
+        } else {
+            exitATM(atmState);
+        }
+    }
+    void cashWithdrawl (int amount, ATMState*& atmState,ATM & atm) override {}
+    void exitATM (ATMState*& atmState) override;                                    
+};
+
+class HasCardState : public ATMState {
+    void insertCard (ATMState*& atmState) override {}
+    void enterPin (int pin, ATMState*& atmState) override {
+        if(pin == 9999){
+            cout<<"PIN is correct"<<endl;
+            atmState = new SelectOptionsState();
+            cout<<"HASCARD state, -> SELECTOPTIONSSTATE"<<endl;
+        } else {
+            cout<<"Incorrect PIN, exiting"<<endl;
+            exitATM(atmState);
+            cout<<"HASCARD  state, -> IDLESTATE"<<endl;
+        }
+    }
+    void selectOptions (string options, ATMState*& atmState) override {}
+    void cashWithdrawl (int amount, ATMState*& atmState, ATM & atm) override {}
+    void exitATM (ATMState*& atmState) override;
+};
+
+class IdleState : public ATMState {
+    void insertCard (ATMState*& atmState) override {atmState = new HasCardState(); cout<<"IDLESTATE, -> HASCARDSTATE"<<endl; }
+    void enterPin (int pin, ATMState*& atmState) override {}
+    void selectOptions (string options, ATMState*& atmState) override {}
+    void cashWithdrawl (int amount, ATMState*& atmState, ATM & atm) override {}
+    void exitATM (ATMState*& atmState) override {}
+};
+
+// Now implement the exitATM function for the classes that use new IdleState()
+void CashWithDrawlState::exitATM(ATMState*& atmState) { atmState = new IdleState();}
+void SelectOptionsState::exitATM(ATMState*& atmState) { atmState = new IdleState();}
+void HasCardState::exitATM(ATMState*& atmState) { atmState = new IdleState();}
+
+// ------------------------------- ATM Room
+class ATMRoom{
+  public:
+    int id;
+    ATM atm;
+    User user;
+    ATMRoom(): id(0), atm(), user(){};
+    ATMRoom(int id, ATM atm, User user): id(id), atm(atm), user(user){};
+};
+
+
+//------------------- MAIN
+int main(){
+    // Obj creation
+    Account account (1920, 5000);
+    User user ("Somesh", account);
+    Card card (5523, 9999, account);
+    ATM atm(1, new IdleState(), 7500, 2, 5, 10);
+    ATMRoom atmRoom(1, atm, user);
+
+    // Workflow
+    atm.atmState->insertCard(atm.atmState);
+    atm.atmState->enterPin(9999, atm.atmState);
+    atm.atmState->selectOptions("cashWithdrwal", atm.atmState);
+    atm.atmState->cashWithdrawl(2500, atm.atmState, atm);
+
+    return 0;
+}
